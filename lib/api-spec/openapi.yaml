@@ -1,0 +1,2085 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: GESAIA - Plataforma de Inteligência Gerencial
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: companies
+    description: Company management
+  - name: networks
+    description: Network/franchise management
+  - name: financialData
+    description: Financial data per company/period
+  - name: calculations
+    description: Calculation engine execution
+  - name: investigations
+    description: Investigation sessions
+  - name: simulations
+    description: Business simulations
+  - name: reports
+    description: Reports and exports
+  - name: users
+    description: User management
+  - name: dashboard
+    description: Dashboard summaries
+  - name: anthropic
+    description: Anthropic AI chat operations
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── USERS ──────────────────────────────────────────────────────────────
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update current user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/invitations:
+    get:
+      operationId: listPendingInvitations
+      tags: [users]
+      summary: List pending user invitations (admin only)
+      responses:
+        "200":
+          description: Pending invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingInvitation"
+
+  /users/invitations/{id}:
+    delete:
+      operationId: revokeInvitation
+      tags: [users]
+      summary: Revoke a pending invitation (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Invitation revoked
+        "404":
+          description: Invitation not found or already accepted
+        "502":
+          description: Clerk could not revoke the invitation
+
+  /users/invitations/{id}/resend:
+    post:
+      operationId: resendInvitation
+      tags: [users]
+      summary: Resend a pending invitation (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: New invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingInvitation"
+        "404":
+          description: Invitation not found or already accepted
+        "409":
+          description: A user or pending invitation already exists for this email address
+        "502":
+          description: Clerk could not process the invitation
+
+  /users/invite:
+    post:
+      operationId: inviteUser
+      tags: [users]
+      summary: Invite a new consultant by email (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInvitationInput"
+      responses:
+        "201":
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingInvitation"
+        "400":
+          description: Invalid email address
+        "409":
+          description: A user or pending invitation already exists for this email address
+        "502":
+          description: Clerk could not process the invitation
+
+  /users/{id}/companies:
+    get:
+      operationId: listUserCompanies
+      tags: [users]
+      summary: List companies linked to a user (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Companies linked to the user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserCompany"
+        "404":
+          description: User not found
+
+  /users/{id}:
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user role/status (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRoleUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Disable user access (admin only). Sets disabled=true so requireAuth blocks re-entry. Returns 409 if user owns companies.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Access disabled
+        "400":
+          description: Cannot remove own account
+        "404":
+          description: Not found
+        "409":
+          description: User owns companies — reassign before removing
+
+  # ── COMPANIES ──────────────────────────────────────────────────────────
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [companies]
+      summary: List companies for current user
+      responses:
+        "200":
+          description: List of companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Company"
+    post:
+      operationId: createCompany
+      tags: [companies]
+      summary: Create a new company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyInput"
+      responses:
+        "201":
+          description: Created company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /companies/{id}:
+    get:
+      operationId: getCompany
+      tags: [companies]
+      summary: Get company details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateCompany
+      tags: [companies]
+      summary: Update company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyUpdate"
+      responses:
+        "200":
+          description: Updated company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+    delete:
+      operationId: deleteCompany
+      tags: [companies]
+      summary: Delete company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Deleted
+
+  /companies/{id}/context:
+    get:
+      operationId: getCompanyContext
+      tags: [companies]
+      summary: Get company business context
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Company context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyContext"
+    put:
+      operationId: upsertCompanyContext
+      tags: [companies]
+      summary: Create or update company business context
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyContextInput"
+      responses:
+        "200":
+          description: Updated context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyContext"
+
+  # ── FINANCIAL DATA ─────────────────────────────────────────────────────
+  /companies/{id}/periods:
+    get:
+      operationId: listPeriods
+      tags: [financialData]
+      summary: List all periods with data for a company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of periods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Period"
+
+  /companies/{id}/data:
+    get:
+      operationId: getCompanyData
+      tags: [financialData]
+      summary: Get financial/operational data for a company and period
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: period
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "Period in YYYY-MM format"
+      responses:
+        "200":
+          description: Company data for period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyData"
+        "404":
+          description: Not found
+    put:
+      operationId: upsertCompanyData
+      tags: [financialData]
+      summary: Create or update financial/operational data for a company period
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyDataInput"
+      responses:
+        "200":
+          description: Upserted company data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyData"
+
+  /companies/{id}/data/import:
+    post:
+      operationId: importCompanyData
+      tags: [financialData]
+      summary: Import financial data from CSV/Excel rows
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataImportPayload"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataImportResult"
+
+  # ── CALCULATIONS ───────────────────────────────────────────────────────
+  /companies/{id}/calculate:
+    post:
+      operationId: runCalculation
+      tags: [calculations]
+      summary: Run one or more calculation engines for a company period
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculationRequest"
+      responses:
+        "200":
+          description: Calculation results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalculationResult"
+
+  /companies/{id}/calculate/full:
+    post:
+      operationId: runFullAnalysis
+      tags: [calculations]
+      summary: Run full analysis with all applicable engines
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FullAnalysisRequest"
+      responses:
+        "200":
+          description: Full analysis result ordered by impact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FullAnalysisResult"
+
+  /companies/{id}/compare-periods/trend:
+    post:
+      operationId: comparePeriodsTrend
+      tags: [calculations]
+      summary: Compare key metrics across three or more periods
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodTrendInput"
+      responses:
+        "200":
+          description: Key metrics and period-over-period changes for every period in the range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodTrend"
+        "400":
+          description: Invalid range or fewer than three periods with data
+        "404":
+          description: Start or end period not found
+
+  /companies/{id}/calculations:
+    get:
+      operationId: listCalculationHistory
+      tags: [calculations]
+      summary: List past calculation runs for a company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of calculation runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalculationRun"
+
+  # ── INVESTIGATIONS ─────────────────────────────────────────────────────
+  /companies/{id}/investigations:
+    get:
+      operationId: listInvestigations
+      tags: [investigations]
+      summary: List investigations for a company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of investigations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Investigation"
+    post:
+      operationId: createInvestigation
+      tags: [investigations]
+      summary: Create a new investigation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvestigationInput"
+      responses:
+        "201":
+          description: Created investigation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investigation"
+
+  /investigations/{id}:
+    get:
+      operationId: getInvestigation
+      tags: [investigations]
+      summary: Get investigation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Investigation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestigationWithMessages"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateInvestigation
+      tags: [investigations]
+      summary: Update investigation status or title
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvestigationUpdate"
+      responses:
+        "200":
+          description: Updated investigation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investigation"
+
+  # ── SIMULATIONS ────────────────────────────────────────────────────────
+  /companies/{id}/simulations:
+    get:
+      operationId: listSimulations
+      tags: [simulations]
+      summary: List saved simulations for a company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of simulations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Simulation"
+    post:
+      operationId: createSimulation
+      tags: [simulations]
+      summary: Save a simulation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationInput"
+      responses:
+        "201":
+          description: Saved simulation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Simulation"
+
+  /simulations/{id}:
+    get:
+      operationId: getSimulation
+      tags: [simulations]
+      summary: Get simulation details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Simulation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Simulation"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteSimulation
+      tags: [simulations]
+      summary: Delete simulation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Deleted
+
+  /simulations/run:
+    post:
+      operationId: runSimulation
+      tags: [simulations]
+      summary: Run a simulation in real time (DRE, price, funnel, turnover, network)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationRunRequest"
+      responses:
+        "200":
+          description: Simulation run result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationRunResult"
+
+  # ── NETWORKS ───────────────────────────────────────────────────────────
+  /networks:
+    get:
+      operationId: listNetworks
+      tags: [networks]
+      summary: List networks for current user
+      responses:
+        "200":
+          description: List of networks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Network"
+    post:
+      operationId: createNetwork
+      tags: [networks]
+      summary: Create a new network/franchise group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkInput"
+      responses:
+        "201":
+          description: Created network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+
+  /networks/{id}:
+    get:
+      operationId: getNetwork
+      tags: [networks]
+      summary: Get network with units
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Network with units
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkWithUnits"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateNetwork
+      tags: [networks]
+      summary: Update network
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkUpdate"
+      responses:
+        "200":
+          description: Updated network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+
+  /networks/{id}/ranking:
+    get:
+      operationId: getNetworkRanking
+      tags: [networks]
+      summary: Get ranking of network units with benchmark and gaps
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: period
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "Period in YYYY-MM format"
+      responses:
+        "200":
+          description: Network ranking result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkRanking"
+
+  # ── DASHBOARD ─────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get summary counts for the current user dashboard
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /companies/{id}/dashboard:
+    get:
+      operationId: getCompanyDashboard
+      tags: [dashboard]
+      summary: Get company dashboard with KPIs, alerts and recent activity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Period in YYYY-MM format"
+      responses:
+        "200":
+          description: Company dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDashboard"
+
+  /companies/{id}/kpi-history:
+    get:
+      operationId: getKpiHistory
+      tags: [dashboard]
+      summary: Get KPI evolution over time for charts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: months
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 12
+      responses:
+        "200":
+          description: KPI history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KpiSnapshot"
+
+  # ── REPORTS ────────────────────────────────────────────────────────────
+  /reports:
+    get:
+      operationId: listReports
+      tags: [reports]
+      summary: List saved reports
+      responses:
+        "200":
+          description: List of reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+    post:
+      operationId: createReport
+      tags: [reports]
+      summary: Generate and save a report for a company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportInput"
+      responses:
+        "201":
+          description: Created report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+
+  /reports/{id}:
+    get:
+      operationId: getReport
+      tags: [reports]
+      summary: Get report details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteReport
+      tags: [reports]
+      summary: Delete report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Deleted
+
+  # ── ANTHROPIC AI CHAT ─────────────────────────────────────────────────
+  /anthropic/conversations:
+    get:
+      operationId: listAnthropicConversations
+      tags: [anthropic]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnthropicConversation"
+    post:
+      operationId: createAnthropicConversation
+      tags: [anthropic]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnthropicConversationInput"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversation"
+
+  /anthropic/conversations/{id}:
+    get:
+      operationId: getAnthropicConversation
+      tags: [anthropic]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversationWithMessages"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteAnthropicConversation
+      tags: [anthropic]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /anthropic/conversations/{id}/messages:
+    get:
+      operationId: listAnthropicMessages
+      tags: [anthropic]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnthropicMessage"
+    post:
+      operationId: sendAnthropicMessage
+      tags: [anthropic]
+      summary: Send a message and receive an AI response (SSE stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnthropicMessageInput"
+      responses:
+        "200":
+          description: SSE stream of assistant response chunks
+          content:
+            text/event-stream: {}
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    # ── USERS ────────────────────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:
+          type: number
+        clerkId:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, consultant, manager, viewer]
+        language:
+          type: string
+          enum: [pt, en]
+        disabled:
+          type: boolean
+          description: When true, requireAuth blocks this Clerk identity from accessing any API endpoint.
+        createdAt:
+          type: string
+      required: [id, clerkId, email, name, role, language, disabled, createdAt]
+
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        language:
+          type: string
+          enum: [pt, en]
+
+    UserRoleUpdate:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [admin, consultant, manager, viewer]
+        disabled:
+          type: boolean
+          description: Set to false to restore access for a previously disabled account.
+
+    UserInvitationInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required: [email]
+
+    PendingInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+          enum: [pending]
+        createdAt:
+          type: string
+      required: [id, email, status, createdAt]
+
+    UserCompany:
+      type: object
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+      required: [id, name]
+
+    # ── COMPANIES ────────────────────────────────────────────────────────
+    Company:
+      type: object
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        segment:
+          type: string
+        activity:
+          type: string
+        businessModel:
+          type: string
+        networkId:
+          type: ["number", "null"]
+        scoreThresholds:
+          oneOf:
+            - $ref: "#/components/schemas/ScoreThresholds"
+            - type: "null"
+        ownerId:
+          type: number
+        createdAt:
+          type: string
+      required: [id, name, segment, activity, businessModel, ownerId, createdAt]
+
+    CompanyInput:
+      type: object
+      properties:
+        name:
+          type: string
+        segment:
+          type: string
+        activity:
+          type: string
+        businessModel:
+          type: string
+        networkId:
+          type: ["number", "null"]
+        scoreThresholds:
+          oneOf:
+            - $ref: "#/components/schemas/ScoreThresholds"
+            - type: "null"
+      required: [name, segment, activity, businessModel]
+
+    CompanyUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        segment:
+          type: string
+        activity:
+          type: string
+        businessModel:
+          type: string
+        networkId:
+          type: ["number", "null"]
+        scoreThresholds:
+          oneOf:
+            - $ref: "#/components/schemas/ScoreThresholds"
+            - type: "null"
+
+    ScoreThresholds:
+      type: object
+      required: [greenMin, yellowMin]
+      properties:
+        greenMin:
+          type: number
+          minimum: 0
+          maximum: 100
+        yellowMin:
+          type: number
+          minimum: 0
+          maximum: 100
+
+    CompanyContext:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        productsServices:
+          type: string
+        mainMarket:
+          type: string
+        competitors:
+          type: string
+        mainChallenges:
+          type: string
+        additionalNotes:
+          type: ["string", "null"]
+        updatedAt:
+          type: string
+      required: [id, companyId, productsServices, mainMarket, competitors, mainChallenges, updatedAt]
+
+    CompanyContextInput:
+      type: object
+      properties:
+        productsServices:
+          type: string
+        mainMarket:
+          type: string
+        competitors:
+          type: string
+        mainChallenges:
+          type: string
+        additionalNotes:
+          type: string
+      required: [productsServices, mainMarket, competitors, mainChallenges]
+
+    # ── PERIODS ─────────────────────────────────────────────────────────
+    Period:
+      type: object
+      properties:
+        period:
+          type: string
+        hasData:
+          type: boolean
+        updatedAt:
+          type: string
+        latestFullAnalysisAt:
+          type: ["string", "null"]
+        needsReanalysis:
+          type: boolean
+      required: [period, hasData, updatedAt, latestFullAnalysisAt, needsReanalysis]
+
+    PeriodTrendInput:
+      type: object
+      properties:
+        periodStart:
+          type: string
+        periodEnd:
+          type: string
+      required: [periodStart, periodEnd]
+
+    PeriodTrendMetric:
+      type: object
+      properties:
+        value:
+          type: ["number", "null"]
+        delta:
+          type: ["number", "null"]
+        deltaPct:
+          type: ["number", "null"]
+        unavailableReason:
+          type: ["string", "null"]
+          enum: [missing_inputs, not_applicable, null]
+          description: Why the value is null when the calculation can identify a cause.
+        missingInputs:
+          type: array
+          description: Raw data fields needed to calculate the metric when unavailableReason is missing_inputs.
+          items:
+            type: string
+      required: [value, delta, deltaPct, unavailableReason, missingInputs]
+
+    PeriodTrendSnapshot:
+      type: object
+      properties:
+        period:
+          type: string
+        metrics:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PeriodTrendMetric"
+      required: [period, metrics]
+
+    PeriodTrend:
+      type: object
+      properties:
+        periodStart:
+          type: string
+        periodEnd:
+          type: string
+        periods:
+          type: array
+          items:
+            $ref: "#/components/schemas/PeriodTrendSnapshot"
+      required: [periodStart, periodEnd, periods]
+
+    # ── FINANCIAL DATA ───────────────────────────────────────────────────
+    CompanyData:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        period:
+          type: string
+        deductions:
+          type: ["number", "null"]
+        depreciationAmortization:
+          type: ["number", "null"]
+        financialExpenses:
+          type: ["number", "null"]
+        incomeTax:
+          type: ["number", "null"]
+        pmr:
+          type: ["number", "null"]
+        pmp:
+          type: ["number", "null"]
+        pme:
+          type: ["number", "null"]
+        proLabore:
+          type: ["number", "null"]
+        grossRevenue:
+          type: ["number", "null"]
+        netRevenue:
+          type: ["number", "null"]
+        cogs:
+          type: ["number", "null"]
+        grossProfit:
+          type: ["number", "null"]
+        fixedCosts:
+          type: ["number", "null"]
+        variableCosts:
+          type: ["number", "null"]
+        ebitda:
+          type: ["number", "null"]
+        netProfit:
+          type: ["number", "null"]
+        cashFlow:
+          type: ["number", "null"]
+        totalEmployees:
+          type: ["number", "null"]
+        activeCustomers:
+          type: ["number", "null"]
+        averageTicket:
+          type: ["number", "null"]
+        conversionRate:
+          type: ["number", "null"]
+        churnRate:
+          type: ["number", "null"]
+        nps:
+          type: ["number", "null"]
+        defaultRate:
+          type: ["number", "null"]
+        additionalData:
+          type: object
+        updatedAt:
+          type: string
+      required: [id, companyId, period, updatedAt]
+
+    CompanyDataInput:
+      type: object
+      properties:
+        period:
+          type: string
+        deductions:
+          type: number
+        depreciationAmortization:
+          type: number
+        financialExpenses:
+          type: number
+        incomeTax:
+          type: number
+        pmr:
+          type: number
+        pmp:
+          type: number
+        pme:
+          type: number
+        proLabore:
+          type: number
+        grossRevenue:
+          type: number
+        netRevenue:
+          type: number
+        cogs:
+          type: number
+        grossProfit:
+          type: number
+        fixedCosts:
+          type: number
+        variableCosts:
+          type: number
+        ebitda:
+          type: number
+        netProfit:
+          type: number
+        cashFlow:
+          type: number
+        totalEmployees:
+          type: number
+        activeCustomers:
+          type: number
+        averageTicket:
+          type: number
+        conversionRate:
+          type: number
+        churnRate:
+          type: number
+        nps:
+          type: number
+        defaultRate:
+          type: number
+        additionalData:
+          type: object
+      required: [period]
+
+    DataImportPayload:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            type: object
+        mapping:
+          type: object
+          description: Maps each supported data field to the corresponding source CSV column name.
+          properties:
+            period:
+              type: string
+            grossRevenue:
+              type: string
+            deductions:
+              type: string
+            netRevenue:
+              type: string
+            cogs:
+              type: string
+            grossProfit:
+              type: string
+            fixedCosts:
+              type: string
+            variableCosts:
+              type: string
+            depreciationAmortization:
+              type: string
+            ebitda:
+              type: string
+            financialExpenses:
+              type: string
+            incomeTax:
+              type: string
+            netProfit:
+              type: string
+            cashFlow:
+              type: string
+            totalEmployees:
+              type: string
+            activeCustomers:
+              type: string
+            averageTicket:
+              type: string
+            conversionRate:
+              type: string
+            churnRate:
+              type: string
+            nps:
+              type: string
+            defaultRate:
+              type: string
+            pmr:
+              type: string
+            pmp:
+              type: string
+            pme:
+              type: string
+            proLabore:
+              type: string
+            additionalData:
+              type: string
+          additionalProperties: false
+          required: [period]
+      required: [rows, mapping]
+
+    DataImportResult:
+      type: object
+      properties:
+        imported:
+          type: number
+        errors:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+      required: [imported, errors, warnings]
+
+    # ── CALCULATIONS ─────────────────────────────────────────────────────
+    CalculationRequest:
+      type: object
+      properties:
+        period:
+          type: string
+        engines:
+          type: array
+          items:
+            type: string
+            enum: [financial, commercial, marketing, operations, hr, risks, innovation, market_intelligence, network, strategy]
+      required: [period, engines]
+
+    CalculationResult:
+      type: object
+      properties:
+        period:
+          type: string
+        results:
+          type: object
+        executedAt:
+          type: string
+      required: [period, results, executedAt]
+
+    FullAnalysisRequest:
+      type: object
+      properties:
+        period:
+          type: string
+      required: [period]
+
+    FullAnalysisResult:
+      type: object
+      properties:
+        period:
+          type: string
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisFinding"
+        blufRecommendation:
+          type: string
+        executedAt:
+          type: string
+      required: [period, findings, blufRecommendation, executedAt]
+
+    AnalysisFinding:
+      type: object
+      properties:
+        engine:
+          type: string
+        title:
+          type: string
+        impact:
+          type: string
+          enum: [high, medium, low]
+        summary:
+          type: string
+        metrics:
+          type: object
+      required: [engine, title, impact, summary]
+
+    CalculationRun:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        period:
+          type: string
+        engines:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        createdAt:
+          type: string
+        isPartial:
+          type: boolean
+          description: Whether this run refreshed only selected engines.
+        engineLastRunAt:
+          type: object
+          description: The latest completed execution timestamp for each engine in this period, as of this run.
+          additionalProperties:
+            type: string
+        findings:
+          type: array
+          description: Complete findings, with partial-run metrics merged onto the preceding full analysis for the same period.
+          items:
+            $ref: "#/components/schemas/AnalysisFinding"
+        blufRecommendation:
+          type: string
+      required: [id, companyId, period, engines, status, createdAt, isPartial, engineLastRunAt, findings, blufRecommendation]
+
+    # ── INVESTIGATIONS ────────────────────────────────────────────────────
+    Investigation:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        title:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, completed]
+        period:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, companyId, title, status, createdAt]
+
+    InvestigationInput:
+      type: object
+      properties:
+        title:
+          type: string
+        period:
+          type: string
+      required: [title]
+
+    InvestigationUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, completed]
+
+    InvestigationWithMessages:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        title:
+          type: string
+        status:
+          type: string
+        period:
+          type: ["string", "null"]
+        conversationId:
+          type: ["number", "null"]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicMessage"
+        createdAt:
+          type: string
+      required: [id, companyId, title, status, createdAt, messages]
+
+    # ── SIMULATIONS ───────────────────────────────────────────────────────
+    Simulation:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        name:
+          type: string
+        type:
+          type: string
+          enum: [dre, price, price_elasticity, discount_impact, discount_compensation_customers, max_discount, revenue_target, hire_impact, free_scenario, fixed_cost_coverage, growth_capital, working_capital, pro_labore_target, funnel, funnel_stage, ticket_impact, sales_team_sizing, marketing_funnel, channel_metrics, ltv_cac, budget_reallocation, bottleneck, capacity_utilization, oee, ops_metric_improvement, turnover, retention_program, workforce_sizing, training_roi, risk_matrix, risk_expected_loss, risk_response, risk_prioritization, competitive_gap, market_share, market_growth, process_automation, growth_scenario, product_mix, break_even_new_product, network]
+        parameters:
+          type: object
+        results:
+          type: object
+        createdAt:
+          type: string
+      required: [id, companyId, name, type, parameters, results, createdAt]
+
+    SimulationInput:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [dre, price, price_elasticity, discount_impact, discount_compensation_customers, max_discount, revenue_target, hire_impact, free_scenario, fixed_cost_coverage, growth_capital, working_capital, pro_labore_target, funnel, funnel_stage, ticket_impact, sales_team_sizing, marketing_funnel, channel_metrics, ltv_cac, budget_reallocation, bottleneck, capacity_utilization, oee, ops_metric_improvement, turnover, retention_program, workforce_sizing, training_roi, risk_matrix, risk_expected_loss, risk_response, risk_prioritization, competitive_gap, market_share, market_growth, process_automation, growth_scenario, product_mix, break_even_new_product, network]
+        parameters:
+          type: object
+        results:
+          type: object
+      required: [name, type, parameters, results]
+
+    SimulationRunRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [dre, price, price_elasticity, discount_impact, discount_compensation_customers, max_discount, revenue_target, hire_impact, free_scenario, fixed_cost_coverage, growth_capital, working_capital, pro_labore_target, funnel, funnel_stage, ticket_impact, sales_team_sizing, marketing_funnel, channel_metrics, ltv_cac, budget_reallocation, bottleneck, capacity_utilization, oee, ops_metric_improvement, turnover, retention_program, workforce_sizing, training_roi, risk_matrix, risk_expected_loss, risk_response, risk_prioritization, competitive_gap, market_share, market_growth, process_automation, growth_scenario, product_mix, break_even_new_product, network]
+        parameters:
+          type: object
+      required: [type, parameters]
+
+    SimulationRunResult:
+      type: object
+      properties:
+        type:
+          type: string
+        outputs:
+          type: object
+        charts:
+          type: array
+          items:
+            type: object
+      required: [type, outputs]
+
+    # ── NETWORKS ──────────────────────────────────────────────────────────
+    Network:
+      type: object
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        ownerId:
+          type: number
+        unitCount:
+          type: number
+        createdAt:
+          type: string
+      required: [id, name, ownerId, unitCount, createdAt]
+
+    NetworkInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+      required: [name]
+
+    NetworkUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    NetworkWithUnits:
+      type: object
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        ownerId:
+          type: number
+        units:
+          type: array
+          items:
+            $ref: "#/components/schemas/Company"
+        createdAt:
+          type: string
+      required: [id, name, ownerId, units, createdAt]
+
+    NetworkRanking:
+      type: object
+      properties:
+        networkId:
+          type: number
+        period:
+          type: string
+        benchmark:
+          type: object
+        idealModel:
+          type: object
+        units:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkUnitRank"
+      required: [networkId, period, units]
+
+    NetworkUnitRank:
+      type: object
+      properties:
+        companyId:
+          type: number
+        companyName:
+          type: string
+        rank:
+          type: number
+        score:
+          type: number
+        gaps:
+          type: object
+      required: [companyId, companyName, rank, score]
+
+    # ── DASHBOARD ─────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      properties:
+        totalCompanies:
+          type: number
+        totalNetworks:
+          type: number
+        totalInvestigations:
+          type: number
+        openInvestigations:
+          type: number
+        totalSimulations:
+          type: number
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+      required: [totalCompanies, totalNetworks, totalInvestigations, openInvestigations, totalSimulations, recentActivity]
+
+    ActivityItem:
+      type: object
+      properties:
+        type:
+          type: string
+        description:
+          type: string
+        entityId:
+          type: number
+        entityName:
+          type: string
+        createdAt:
+          type: string
+      required: [type, description, createdAt]
+
+    CompanyDashboard:
+      type: object
+      properties:
+        companyId:
+          type: number
+        period:
+          type: string
+        kpis:
+          type: array
+          items:
+            $ref: "#/components/schemas/KpiCard"
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Alert"
+        recentInvestigations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Investigation"
+        recentSimulations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Simulation"
+      required: [companyId, kpis, alerts]
+
+    KpiCard:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        value:
+          type: ["number", "null"]
+        unit:
+          type: string
+        trend:
+          type: ["number", "null"]
+        status:
+          type: string
+          enum: [good, warning, critical, neutral]
+      required: [key, label, status]
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          type: string
+          enum: [high, medium, low]
+        message:
+          type: string
+        engine:
+          type: string
+      required: [id, severity, message]
+
+    KpiSnapshot:
+      type: object
+      properties:
+        period:
+          type: string
+        netRevenue:
+          type: ["number", "null"]
+        grossMargin:
+          type: ["number", "null"]
+        ebitdaMargin:
+          type: ["number", "null"]
+        netMargin:
+          type: ["number", "null"]
+        averageTicket:
+          type: ["number", "null"]
+      required: [period]
+
+    # ── REPORTS ───────────────────────────────────────────────────────────
+    Report:
+      type: object
+      properties:
+        id:
+          type: number
+        companyId:
+          type: number
+        title:
+          type: string
+        type:
+          type: string
+          enum: [investigation, full_analysis, simulation]
+        content:
+          type: object
+        createdAt:
+          type: string
+      required: [id, companyId, title, type, content, createdAt]
+
+    ReportInput:
+      type: object
+      properties:
+        companyId:
+          type: number
+        title:
+          type: string
+        type:
+          type: string
+          enum: [investigation, full_analysis, simulation]
+        content:
+          type: object
+      required: [companyId, title, type, content]
+
+    # ── ANTHROPIC ─────────────────────────────────────────────────────────
+    AnthropicConversation:
+      type: object
+      properties:
+        id:
+          type: number
+        title:
+          type: string
+        createdAt:
+          type: string
+      required: [id, title, createdAt]
+
+    AnthropicMessage:
+      type: object
+      properties:
+        id:
+          type: number
+        conversationId:
+          type: number
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+      required: [id, conversationId, role, content, createdAt]
+
+    AnthropicConversationInput:
+      type: object
+      properties:
+        title:
+          type: string
+      required: [title]
+
+    AnthropicMessageInput:
+      type: object
+      properties:
+        content:
+          type: string
+      required: [content]
+
+    AnthropicConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: number
+        title:
+          type: string
+        createdAt:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicMessage"
+      required: [id, title, createdAt, messages]
+
+    AnthropicError:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
