@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "GESAIA"
+description = "GESAIA é uma plataforma de inteligência gerencial para consultores e gestores diagnosticarem empresas. Combina 9 especialistas de negócio, 9 motores de cálculo, chat com IA (Claude), simuladores interativos, dashboards executivos, importação de dados e exportação de relatórios PDF. Suporta empresa individual e redes/franquias."
+version = "1.0.0"
+id = "artifacts/gesaia"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19412
+
+[services.development]
+run = "pnpm --filter @workspace/gesaia run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gesaia", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/gesaia/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19412"
+BASE_PATH = "/"
