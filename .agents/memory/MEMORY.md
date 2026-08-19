@@ -1,0 +1,4 @@
+- [Dev environment quirks](dev-environment-quirks.md) — tsc -b lib/db after schema changes; tsx loader path; pre-existing TS errors; Clerk-gated APIs need helper-level tests.
+- [Component DOM tests](component-dom-tests.md) — direct tsx component tests use the classic JSX runtime; import React by default in rendered TSX modules.
+- [Scorecard threshold policy](scorecard-threshold-policy.md) — company score bands reclassify current and historical scored findings, not just PDF colors.
+- [Isolated release browser checks](isolated-release-browser-checks.md) — release E2E jobs should allowlist test-only secrets and reject production auth configuration.
